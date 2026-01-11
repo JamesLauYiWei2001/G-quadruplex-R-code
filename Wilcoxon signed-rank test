@@ -1,0 +1,42 @@
+#Wilcoxon signed-rank test: Statistical comparison of ΔTm induced by QN-302 and CM-03 across G4 sequences (that meet two state assumption) for MPharm final-year project
+#Author: James Lau Yi Wei 
+#Sn: 22027932
+
+#Data frame containing tm results with and without ligand binding. The full numerical figures are preserved for more accurate statistical analysis 
+tm_df <- data.frame(
+  sequence = c("Native_KRAS", "KRAS_SS22_1", "KRAS_SS22_2", "MER12_1", "MER12_2"),
+  apo_tm = c(48.06607260048,51.6195880449037,48.2737455819009,53.5001991173014,54.5782472059118),
+  QN302_tm = c(50.2123760281615,53.1837159256395,49.4827759096762,54.3156177901214,56.1325221458302),
+  CM03_tm = c(55.3389809999322,55.1196754439283,58.0201111445807,58.5314516956225,63.6582154024317))
+
+print(tm_df)
+
+#delta Tm of QN302
+QN302_d_tm <- tm_df$QN302_tm - tm_df$apo_tm
+print(QN302_d_tm)
+
+#delta Tm of CM03 
+CM03_d_tm <- tm_df$CM03_tm - tm_df$apo_tm
+print(CM03_d_tm)
+
+#mean and median of Tm for QN302 and CM03 
+print(mean(QN302_d_tm))
+print(mean(CM03_d_tm))
+median_QN302 <- median(QN302_d_tm)
+median_CM03 <- median(CM03_d_tm)
+
+print(median_QN302)
+print(median_CM03)
+
+
+#delta delta Tm of QN302 and CM03 alongside 5 number summary (mean, median, quartiles, minimum and maximum values)
+ddtm <- CM03_d_tm - QN302_d_tm
+summary(ddtm)
+
+#wilcox test 
+result <- stats::wilcox.test(CM03_d_tm, QN302_d_tm, paired = TRUE, exact = TRUE, conf.int = TRUE)
+print(result)
+
+#As V = 15 indicates consistent directionality, implying that CM03 consistently produced a larger Tm than QN302. 
+#However at p-value = 0.0625, this result is deemed as conventionally non-significant, H0 cannot be conventionally rejected. 
+#The only reasonable conclusion from this is that the test is deemed statistically underpowered. 
