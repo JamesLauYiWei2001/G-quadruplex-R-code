@@ -1,0 +1,513 @@
+##CD Thermodynamic Data pipeline master script##
+##Created by: James Lau Yi Wei##
+
+#Libraries for Data Handling 
+library(data.table)
+library(tidyverse) #for data cleaning and wrangling
+
+#librart for smoothing CD and melting curves 
+library(signal) #smoothing via Savitzky-Golay (remove CD noise)
+
+#libraries for generating graphs 
+library(ggplot2)
+library(glue)
+
+#load CD melting curve file.CSV
+CD_data_raw = read_lines("19mer melting.csv") #name of file
+CD_curve_name = "19-MER" #name will appear in all graphs generated below 
+#print(CD_data_raw, n = Inf) #only un-# if you want to check the whole matrix
+
+#load buffer only file.CSV (for baseline corrections later)
+buffer_data_raw = read_csv("buffer for baseline correction.csv", col_names = FALSE)
+
+#delete informartion at the top, bottom (channel 2) and removes all information after column 19 (after 90 degrees celsius) then checks if all information has been deleted
+CD_clean_data <- CD_data_raw[-c(1:19)] #deletes the top miscellaneous information in the .CSV
+
+CD_clean_data <- CD_clean_data[1:183] #deletes everything starting from channel 2 to the bottom in the .CSV
+CD_data_essentials <- tibble(line = CD_clean_data) %>% 
+  separate(
+    line,
+    into = paste0("V", 1:19),
+    sep = ",",
+    extra = "drop",
+    convert = TRUE, 
+    fill = "right")
+
+head(CD_data_essentials) #you should see the 2nd row starting with 320nm wavelength
+tail(CD_data_essentials) #you should see the 5th row ending with 230nm wavelength
+#print(CD_data_essentials, n = Inf) #only un-# if you want to check the whole matrix
+
+#Reshape Channel 1 matrix into a new table so that R can process it effectively (Table headings: Wavelength, temperature, Ellipticity)
+temperature_values <- as.numeric(CD_data_essentials[1, -1]) %>% #assigns the first row(temperature) to the second column in new table 
+  unlist() %>% 
+  as.character() %>% 
+  str_trim() %>% 
+  as.numeric()
+
+CD_curve_no_header <- CD_data_essentials %>% #removes the first row (temperature) in the old table
+  slice(-1)
+
+colnames(CD_curve_no_header) <- c("wavelength", temperature_values) #creates new headers
+
+CD_curve_long <- CD_curve_no_header %>% #takes the values in the matrix and assigns it to the last column (ellipticity) in long form
+  pivot_longer(
+    cols = -wavelength,
+    names_to = "temperature",
+    values_to = "ellipticity",
+    values_transform = list(ellipticity = as.numeric)) %>%
+  mutate(
+    wavelength = as.numeric(wavelength),
+    temperature = as.numeric(temperature),
+    ellipticity = as.numeric(ellipticity))
+
+#head(CD_curve_long)
+#tail(CD_curve_long)
+print(CD_curve_long, n = Inf) #only un-# if you want to check the whole table. Should only see 3 columns: wavelength, temperature and ellipticity. 
+
+#generate the raw graph (before smoothing with savitzy-Golay and further processing (i.e. baseline correction))
+raw_CD_graph <- ggplot(data = CD_curve_long, aes(x = wavelength, y = ellipticity, group = temperature, color = temperature)) + 
+  geom_line(size = 1, alpha = 1) + 
+  scale_x_reverse() + 
+  scale_color_viridis_c(option = "turbo") + 
+  labs(
+    title = glue("{CD_curve_name} RAW (Before adjustments)"), 
+    x = "wavelength (nm)",
+    y = "Ellipticity (mdeg)", 
+    color = "Temperature(°C)") + 
+  theme_minimal(base_size = 10)
+print(raw_CD_graph)
+
+#Data cleaning and reshaping but for the phosphate buffer file (spectroscopy;same process as for CD above)
+buffer_data_raw2 = buffer_data_raw %>% 
+  slice(-c(1:21))
+buffer_data_essentials = buffer_data_raw2 %>% 
+  slice(-c(182:99999))
+buffer_data_essentials = buffer_data_essentials %>% 
+  select(1:2) 
+
+#head(buffer_data_essentials) 
+#tail(buffer_curve_essentials) 
+#print(buffer_data_essentials, n = Inf) 
+
+buffer_baseline = buffer_data_essentials %>% 
+  select(1,2) %>% 
+  rename(
+    wavelength = 1, 
+    ellipicity_buffer = 2) %>% 
+  mutate(
+    wavelength = as.numeric(wavelength),
+    ellipicity_buffer = as.numeric(ellipicity_buffer))
+#head(buffer_baseline)
+
+CD_with_buffer_adjusted <- CD_curve_long %>% 
+  left_join(buffer_baseline, by = 'wavelength')
+
+head(CD_with_buffer_adjusted)
+#print(CD_with_buffer_adjusted, n = Inf)
+
+baseline_correction <- CD_with_buffer_adjusted %>% #the baseline correction applied to the CD spectra long form 
+  mutate(ellipticity = ellipticity - ellipicity_buffer) %>% 
+  select(wavelength, temperature, ellipticity)
+#head(baseline_correction) #un-# if you wish to see the baseline corrections applied
+
+# ADJUSTED CD MELT WITH BUFFER CORRECTION 
+BC_CD_graph <- ggplot(data = baseline_correction, aes(x = wavelength, y = ellipticity, group = temperature, color = temperature)) + 
+  geom_line(size = 1, alpha = 1) + 
+  scale_x_reverse() + 
+  scale_color_viridis_c(option = "turbo") + 
+  labs(
+    title = glue("{CD_curve_name} WITH BASELINE CORRECTIONS"), 
+    x = "wavelength (nm)",
+    y = "Ellipticity (mdeg)", 
+    color = "Temperature(°C)") + 
+  theme_minimal(base_size = 10)
+print(BC_CD_graph)
+
+###Savitzky-Golay smoothing (remove CD Noise)
+Smoothing_CD <- baseline_correction %>% 
+  group_by(temperature) %>% 
+  mutate(
+    ellipticity_smoothed = sgolayfilt(
+      ellipticity, 
+      p = 5,  #polynomial order
+      n = 11)) %>% #window length
+  ungroup()
+
+##Generate single CD spectroscopic line at temperature closes to room temperature (25) ###
+target_temp <- 25
+closest_temp <- Smoothing_CD %>%
+  distinct(temperature) %>%
+  mutate(diff = abs(temperature - target_temp)) %>%
+  slice_min(diff, n = 1) %>%
+  pull(temperature)
+print(closest_temp)
+
+peak_window   <- c(255, 275)  # parallel G4 positive band
+trough_window <- c(235, 250)  # parallel G4 negative band
+
+CD_25C <- Smoothing_CD %>%
+  dplyr::filter(temperature == closest_temp) %>%
+  dplyr::select(wavelength, ellipticity_smoothed)
+
+peak_265 <- CD_25C %>% #extract positive peak 
+  dplyr::filter(
+    wavelength >= peak_window[1],
+    wavelength <= peak_window[2]) %>%
+  dplyr::slice_max(ellipticity_smoothed, n = 1, with_ties = FALSE)
+
+trough_240 <- CD_25C %>% #extract negative trough
+  dplyr::filter(
+    wavelength >= trough_window[1],
+    wavelength <= trough_window[2]) %>%
+  dplyr::slice_min(ellipticity_smoothed, n = 1, with_ties = FALSE)
+
+CD_25C <- CD_25C %>%
+  dplyr::filter(!is.na(ellipticity_smoothed))
+
+CD_25C_plot <- ggplot(CD_25C, aes(x = wavelength, y = ellipticity_smoothed)) +
+  geom_line(linewidth = 1.1, colour = "#1F4FFF") +
+  geom_hline(yintercept = 0, linewidth = 0.5, colour = "black") + 
+  geom_point(data = peak_265, aes(wavelength, ellipticity_smoothed), size = 2.5, colour = "black") +
+  geom_point(data = trough_240, aes(wavelength, ellipticity_smoothed), size = 2.5, colour = "black") +
+  annotate("text", x = peak_265$wavelength, y = peak_265$ellipticity_smoothed, label = glue("+{round(peak_265$wavelength,1)} nm"), vjust = -1, size = 3.5) +
+  annotate("text",x = trough_240$wavelength, y = trough_240$ellipticity_smoothed, label = glue("{round(trough_240$wavelength,1)} nm"), vjust = 1.5, size = 3.5) +
+  scale_x_reverse(limits = c(230, 320)) +
+  labs(
+    title = glue("{CD_curve_name} CD spectrum at {round(closest_temp,2)} °C"),
+    x = "Wavelength (nm)",
+    y = "Ellipticity (mdeg)") +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.line = element_line(linewidth = 0.6),
+    axis.text = element_text(colour = "black"),
+    axis.title = element_text(colour = "black"),
+    panel.grid.minor = element_blank())
+print(CD_25C_plot)
+
+###Generate smoothed CD graph to go into the paper###
+Smoothed_CD_graph <- ggplot(data = Smoothing_CD, aes(x = wavelength, y = ellipticity_smoothed, group = temperature, colour = temperature)) + 
+  geom_line(linewidth = 0.6, alpha = 0.85) + 
+  scale_x_reverse(limits = c(230, 320), breaks = c(230, 250, 270, 290, 310, 330), expand = expansion(mult = c(0.01, 0.01))) + 
+  scale_color_viridis_c(option = "turbo", name = "Temperature (°C)") + 
+  labs(
+    title = glue("Thermal Unfolding of {CD_curve_name}"), 
+    subtitle = "Circular Dichroism spectra (230-320nm)",
+    x = "Wavelength (nm)",
+    y = "Ellipticity (mdeg)", 
+    color = "Temperature(°C)") + 
+  theme_minimal(base_size = 11) + 
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0),
+    plot.subtitle = element_text(size = 9, margin = margin(b = 6)),
+    axis.line = element_line(linewidth = 0.6),
+    axis.ticks = element_line(linewidth = 0.6),
+    axis.text = element_text(colour = "black"),
+    axis.title = element_text(colour = "black"),
+    legend.position = "right",
+    legend.background = element_blank(),
+    legend.key = element_blank()) 
+
+print(Smoothed_CD_graph)
+
+###Identifies and extracts the peak ellipticity within the range###
+peak_window <- c(260, 270)  # adjust range if needed for future use. However, all sequences have demonstrated peaks in the range of 260-270nm for a parallel fold. 
+desired_wavelength <- mean(peak_window) ##for reporting on graph
+
+melting_data <- Smoothing_CD %>%
+  dplyr::filter(
+    wavelength >= peak_window[1],
+    wavelength <= peak_window[2],
+    !is.na(ellipticity_smoothed)) %>%
+  dplyr::group_by(temperature) %>%
+  dplyr::slice_max(ellipticity_smoothed, n = 1, with_ties = FALSE) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(temperature, ellipticity_smoothed) %>%
+  dplyr::arrange(temperature)
+
+#print(melting_data)
+
+#boltzmann sigmoidal curve (L, U, Tm, k) equation/ two-state thermodynamic model, please refer to appropriate section in methodology for assumptions used. 
+ThermalModel <- function(temperature, aN, bN, aD, bD, dH, Tm) {
+  R <- 1.987     #universal gas constant in cal/mol k 
+  T <- temperature + 273.15
+  TmK <- Tm + 273.15
+  Kd <- exp((dH / R) * (1/TmK - 1/T))
+  theta <- ((aN*T + bN) + Kd*(aD*T + bD)) / (1 + Kd)
+  return(theta)}
+
+melting_fit <- nls(
+  ellipticity_smoothed ~ ThermalModel(
+    temperature,
+    aN, bN, aD, bD, dH, Tm),
+  data = melting_data,
+  start = list(
+    aN = 0, 
+    bN = max(melting_data$ellipticity_smoothed),
+    aD = 0, 
+    bD = min(melting_data$ellipticity_smoothed),
+    dH = 54000, #initial parameter estimate (cal/mol). 
+    Tm = 57), # initial parameter estimates (°C)
+  control = nls.control(maxiter = 500, warnOnly = TRUE))
+#literature advised the use of dH = 100,000 and Tm = 60, assuming a strict non-negotiable two state. However, this produced unstable baseline estimates and inflated confidence intervals. These initial values used are closer to physiologically plausible literature values and used as moderate starting guesses to improve numerical stability and reduce sensitivity to baseline uncertainty.
+#These are hence more cooperative with sequences that do not demonstrate a strict two state model by numerically stabilising Tm. However, this still does not make derived ΔH or ΔS physically meaningful. 
+
+#predict smooth curve shape 
+fit_params <- coef(melting_fit) #extract the parameters above calculated 
+print(fit_params)
+
+temperature_range <- seq(min(melting_data$temperature), #generate 200 temperature values in tiny increments between 20 to 90 degrees at the specific wavelength 
+                         max(melting_data$temperature),
+                         length.out = 200)
+
+predicted <- data.frame(
+  temperature = temperature_range,
+  ellipticity_fit = ThermalModel(temperature_range,fit_params["aN"], fit_params["bN"],fit_params["aD"], fit_params["bD"],
+                                 fit_params["dH"], fit_params["Tm"])) #apply the above 200 temperature values to the model 
+
+
+###plotting out melting curve to go into the papers###
+melting_curve_plot <- ggplot() +
+  geom_point(data = melting_data, aes(temperature, ellipticity_smoothed), size = 2, colour = "black") +
+  geom_line(data = predicted, aes(temperature, ellipticity_fit), colour = "#2C3E8F", size = 1.2) +
+  #geom_vline(xintercept = fit_params['Tm'], linetype = "dashed", colour = "#3B4BFF") +
+  #annotate("text", x = fit_params['Tm'] -2 , y = mean(range((melting_data$ellipticity_smoothed))),
+   #       label = glue("Tm = {round(fit_params['Tm'], 1)} °C"), 
+    #       size = 3.5, 
+     #      hjust = 0, colour = "#3B4BFF") +
+  labs(title = glue("{CD_curve_name} Melting Curve Fit at {desired_wavelength} nm"),
+       subtitle = glue("Thermal denaturation of {CD_curve_name} at {desired_wavelength} nm"),
+       x = "Temperature (°C)",
+       y = "Ellipticity (mdeg)") +
+  theme_minimal(base_size = 12) + 
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0),
+    axis.line = element_line(linewidth = 0.6),
+    axis.ticks = element_line(linewidth = 0.6),
+    axis.text = element_text(colour = "black"),
+    axis.title = element_text(colour = "black"),
+    panel.grid.minor = element_blank())
+print(melting_curve_plot)
+
+#raw print everything calculated above 
+#print(fit_params)
+#print(predicted)
+#summary(melting_fit)
+
+#compute apparent thermodynamic parameters (delta H, S and G @ 4 degrees, 12 degrees), following assumptions outlined in paper 
+R_cal <- 1.987 
+
+dH_cal_permol = unname(fit_params['dH']) #extraction of delta H from above 
+Tm_c <- unname(fit_params["Tm"]) #extraction of Tm from above 
+Tm_k <- Tm_c + 273.15 #conversion to kelvin 
+
+#apparent entropy delta S (delta G = 0 at Tm when folded/unfolded population is at equilibrium, so based off ΔG = ΔH - T*ΔS, ΔH = T*ΔS )
+dS_cal_permol <- dH_cal_permol / Tm_k 
+
+#crystallisation incubation temperatures (4 & 12 degrees celsius converted to kelvin)
+incubation_t4_k <- 4 + 273.15 
+incubation_t12_k <- 12 + 273.15 
+
+#apparent delta G at 4/12 degrees, as per equation (ΔG(T) = ΔH - TΔS)
+dG_4_cal_permol <- dH_cal_permol - incubation_t4_k * dS_cal_permol
+dG_12_cal_permol <- dH_cal_permol - incubation_t12_k * dS_cal_permol
+
+#conversion to more appropriate units, summary code at the bottom of the script. 
+dh_kj_permol <- dH_cal_permol * 4.184/1000 #convert ΔH to kj/mol 
+ds_j_permol <- dS_cal_permol * 4.184 #convert ΔS to j/mol 
+dG_4_kj_permol <- dG_4_cal_permol * 4.184/1000 #convert ΔG at 4 degrees to kj/mol 
+dG_12_kj_permol <- dG_12_cal_permol * 4.184/1000 #convert ΔG at 12 degrees to kj/mol 
+
+###Extraction of fraction folded at incubation temperature using fn(t) = 1/ (1 + kd(T)), where kd(T) = exp((dH/R) * (1/TmK - 1/T)), deriving from van't hoff eq ###
+#Step 1: define function to extract fraction folded at 4 degrees/12 degrees 
+fraction_folded <- function(temperature_celsius, dH, Tm) {
+  R <- 1.987 #universal gas constant 
+  T <- temperature_celsius + 273.15
+  TmK <- Tm + 273.15 
+  Kd <- exp((dH/R)*(1/TmK - 1/T))
+  folded_fraction = 1/(1+ Kd)
+  return(folded_fraction)}
+
+#using above function to calculate fraction folded at 4 and 12 degrees 
+folded_at_4 <- fraction_folded( 
+  temperature_celsius = 4, 
+  dH = fit_params["dH"],
+  Tm = fit_params["Tm"])
+
+folded_at_12 <- fraction_folded( 
+  temperature_celsius = 12, 
+  dH = fit_params["dH"],
+  Tm = fit_params["Tm"])
+
+folded_at_90 <- fraction_folded( #confirm that full unfolding has happened, if not used to determine what extent unfolding has occurred (esp for 1:5 ligand binding ratios/19-mer/c-MYC)
+  temperature_celsius = 90,
+  dH = fit_params["dH"],
+  Tm = fit_params["Tm"])
+
+#Conversion to percentages 
+folded_at_4_percent <- folded_at_4 * 100 
+folded_at_12_percent <- folded_at_12 * 100 
+folded_at_90_percent <- folded_at_90 * 100
+
+### ΔG(T) curve across full temperature range (two-state model), variables used = melting_data$temperature, dH_cal_permol, dS_cal_permol, Tm_C all present above ###
+#step 1: creates a temperature grid in celsius between 4 to 95 degrees, with 500 intervals and later convert to K 
+Temperatures_grid_C <- seq( 
+  min(melting_data$temperature, na.rm = TRUE), 
+  max(melting_data$temperature, na.rm = TRUE), 
+  length.out = 500)
+
+Temperatures_grid_k <- Temperatures_grid_C + 273.15 
+print(Temperatures_grid_C)
+
+#step 2: Calculate delta G from above variables and the new grid and convert to kj/mol, again using ΔG = ΔH - T*ΔS
+delta_G_cal_permol <- dH_cal_permol - (Temperatures_grid_k * dS_cal_permol)
+delta_G_kjmol <- (delta_G_cal_permol * 4.184) /1000
+
+#step 3: put deltaG values into a new dataframe 
+delta_G_T_dataframe <- tibble(
+  temperature_C = Temperatures_grid_C, 
+  delta_G_kjmol = delta_G_kjmol)
+print(delta_G_T_dataframe, n = Inf)
+
+#step 3.5 annotate 4/12°C
+annotations_4_12 <- tibble(temperatures_c = c(4,12),
+                           label = c("4°C", "12°C"), 
+                           delta_G_kjmol = c(dG_4_kj_permol, dG_12_kj_permol)) 
+
+#step 4: plot delta G vs T curve 
+delta_G_T_plot <- ggplot(delta_G_T_dataframe, aes(x = temperature_C, y = delta_G_kjmol)) + 
+  geom_line(linewidth = 1) + 
+  geom_vline(xintercept = Tm_c, linetype = "dotted", linewidth = 0.5) + 
+  annotate("text", x = Tm_c - 0.2, y = max(delta_G_T_dataframe$delta_G_kjmol)*0.9, label = glue("Tm = {round(Tm_c,1)}°C"), vjust =-0.4, angle = 90) +
+  geom_point(data = annotations_4_12, aes(x = temperatures_c, y = delta_G_kjmol), size = 2.5, colour = "black") + 
+  geom_text(data = annotations_4_12, aes(x = temperatures_c, y = delta_G_kjmol, size = 2.5, label = label), colour = "black", vjust = -1,size = 3) +
+  labs(title = glue("{CD_curve_name}: Temperature-dependent ΔG vs T"),
+       subtitle = glue("Extracted using ΔG = ΔH - T*ΔS"),
+       x= "Temperature (°C)", y = "ΔG (kJ/mol)") + 
+  theme_minimal(base_size = 12) + 
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0),
+    axis.line = element_line(linewidth = 0.6),
+    axis.ticks = element_line(linewidth = 0.6),
+    axis.text = element_text(colour = "black"),
+    axis.title = element_text(colour = "black"),
+    panel.grid.minor = element_blank())
+print(delta_G_T_plot)
+
+###plot graph of Keq vs T ####
+#Step 1: Make custom function, keq = e^(-ΔG/RT), derived from ΔG = -RTln(Keq) 
+keq_equation <- function(delta_G_kjmol, T_K) {
+  R <- 8.314 
+  deltaG_Jmol <- delta_G_kjmol*1000
+  keq <- exp(-deltaG_Jmol/(R*T_K))
+  return(keq)}
+
+#Step 2: reuse ΔG and T (kevin) values previously established from plot above, make into a new data frame 
+delta_G_T_dataframe_keq <- delta_G_T_dataframe %>% 
+  mutate(
+    temperature_k = temperature_C + 273.15, 
+    keq = keq_equation(delta_G_kjmol, temperature_k), 
+    ln_keq = log(keq))
+
+print(delta_G_T_dataframe_keq, n = Inf) #by values of keq, graph appears exponential in nature. 
+
+#step 3: plot keq vs temperature (celsius)
+Keq_T_plot_log <- ggplot(delta_G_T_dataframe_keq, aes(x = temperature_C, y = keq)) +
+  geom_line(linewidth = 1) +
+  labs(title = glue("{CD_curve_name}: Temperature-dependent Keq vs T"),
+       subtitle = "Derived from ΔG = -RTln(Keq)",
+       x = "Temperature (°C)",
+       y = "Keq") +
+  geom_hline(yintercept = 1, linetype = "dashed", linewidth = 0.5) + 
+  annotate("text", x = min(delta_G_T_dataframe_keq$temperature_C)*0.25, y = 2, label = "Keq = 1 (ΔG = 0)", hjust = 0, size = 3.5) +
+  geom_vline(xintercept = Tm_c, linetype = "dashed", linewidth = 0.5) + 
+  annotate("text", x = Tm_c, y = max(delta_G_T_dataframe_keq$keq)*0.90,label = glue("Tm = {round(Tm_c,1)}°C"),angle = 90, vjust = -0.4, size = 3.5) +
+  theme_minimal(base_size = 12) + 
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0),
+    axis.line = element_line(linewidth = 0.6),
+    axis.ticks = element_line(linewidth = 0.6),
+    axis.text = element_text(colour = "black"),
+    axis.title = element_text(colour = "black"),
+    panel.grid.minor = element_blank())
+
+print(Keq_T_plot_log)
+
+#Step 3.5: plot ln(keq) vs Temperature 
+lnkeq_t_plot <- ggplot(delta_G_T_dataframe_keq, aes(x = temperature_C, y = ln_keq)) + 
+  geom_line(linewidth = 1) + 
+  geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.6) +
+  annotate("text", x = min(delta_G_T_dataframe_keq$temperature_C) + 2, y = 0.3, label = "ln(Keq) = 0", hjust = 0, size = 3.6) +
+  geom_vline(xintercept = Tm_c, linetype = "dashed", linewidth = 0.5) + 
+  annotate("text", x = Tm_c, y = min(delta_G_T_dataframe_keq$ln_keq) + 1,label = glue("Tm = {round(Tm_c,1)}°C"),angle = 90, vjust = -0.4, size = 3.6) +
+  labs(title = glue("{CD_curve_name}: Temperature-dependent ln Keq vs T"),
+       subtitle = glue("Derived from ΔG = -RTln(Keq) "),
+       x= "Temperature (°C)", y = "ln Keq") + 
+  theme_minimal(base_size = 12) + 
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0),
+    axis.line = element_line(linewidth = 0.6),
+    axis.ticks = element_line(linewidth = 0.6),
+    axis.text = element_text(colour = "black"),
+    axis.title = element_text(colour = "black"),
+    panel.grid.minor = element_blank())
+print(lnkeq_t_plot)
+
+#step 4: Derive fraction folded fn = 1/(keq + 1) across temperature plot, derived from keq = fu/fn, where fu = 1 - fn
+delta_G_T_dataframe_fn <- delta_G_T_dataframe_keq %>% 
+  mutate(fraction_folded = 1/ (1 + keq))
+head(delta_G_T_dataframe_fn)
+
+#step 5: Plot fraction folded vs temperature 
+fraction_folded_plot <- ggplot(delta_G_T_dataframe_fn, aes(x = temperature_C, y = fraction_folded)) +
+  geom_line(linewidth = 1) +
+  geom_vline(xintercept = Tm_c, linetype = "dashed", linewidth = 0.5) +
+  annotate("text", x = Tm_c - 11, y = 0.5, label = glue("Tm = {round(Tm_c, 1)} °C"), hjust = 0) +
+  labs(
+    title = glue("{CD_curve_name}: Fraction folded vs temperature"),
+    subtitle = "Derived from two-state thermodynamic model, in line with two state assumption.",
+    x = "Temperature (°C)",
+    y = "Fraction folded") +
+  scale_y_continuous(limits = c(0, 1)) +
+  theme_minimal(base_size = 12) + 
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0),
+    axis.line = element_line(linewidth = 0.6),
+    axis.ticks = element_line(linewidth = 0.6),
+    axis.text = element_text(colour = "black"),
+    axis.title = element_text(colour = "black"),
+    panel.grid.minor = element_blank())
+print(fraction_folded_plot)
+
+#extract Keq at crystallisation temperatures (4 degree and 12 degrees) 
+#Keq this is not reported in the paper, it is used to check for model consistency with fraction folded calculated previously. 
+#It is in Keq = U/F, so decimal places will result, rather than a value > 1. 
+# The primary reported metric is fraction folded: fn = 1/(1 + keq) in percentages
+keq_4 <- delta_G_T_dataframe_keq %>%
+  mutate(diff = abs(temperature_C - 4)) %>%
+  slice_min(diff, n = 1) %>%
+  pull(keq)
+
+keq_12 <- delta_G_T_dataframe_keq %>%
+  mutate(diff = abs(temperature_C - 12)) %>%
+  slice_min(diff, n = 1) %>%
+  pull(keq)
+
+#summary report of all parameters gathered above. 
+cat("\n=====Summary report of apparent thermodynamic parameters extracted from 2 state model =====\n")
+cat(glue("Sequence name: {CD_curve_name} \n"))
+cat(glue("Wavelength: {desired_wavelength} nm \n"))
+cat(glue("Exact temperature used for CD spectrum: {closest_temp}"))
+cat(glue("Tm: {Tm_c}°C \n")) 
+cat(glue("ΔH: {dh_kj_permol} kJ/mol \n"))
+cat(glue("ΔS: {ds_j_permol} J/mol\n "))
+cat(glue("ΔG at 4 degrees: {dG_4_kj_permol} kJ/mol \n"))
+cat(glue("ΔG at 12 degrees: {dG_12_kj_permol} kJ/mol\n"))
+cat(glue("Keq at 4°C: {keq_4}\n"))
+cat(glue("Keq at 12°C: {keq_12}\n"))
+cat(glue("Fraction folded at 4°C: {folded_at_4_percent}% \n"))
+cat(glue("Fraction folded at 12°C: {folded_at_12_percent}%\n"))
+cat(glue("Fraction folded at 90°C: {folded_at_90_percent}%\n")) #only for use with sequences that do not meet 2 state assumption. Rule: <10% folded assume two-state assumption met.
+cat("=========================================================================================")
+
+
+confint(melting_fit, level = 0.95)
