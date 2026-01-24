@@ -55,7 +55,8 @@ As a result, all thermodynamic parameters are treated as apparent values.
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ## 2. Statistical Comparison of Ligand-Induced Stabilisation
-Purpose: To statistically compare ligand-induced changes in melting temperature (ΔTm) between two G-quadruplex ligands (QN-302 and CM-03) across multiple sequences that satisfy the two-state assumption.
+### Purpose: To statistically compare ligand-induced changes in melting temperature (ΔTm) between two G-quadruplex ligands (QN-302 and CM-03) across multiple sequences that satisfy the two-state assumption.
+
 ### Methodology: 
 - ΔTm calculated relative to apo DNA for each sequence  
 - Paired Wilcoxon signed-rank test used due to:
@@ -71,9 +72,7 @@ The analysis evaluates:
 - Statistical power limitations inherent to small-n biophysical datasets
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ## 3. Crystallisation Outcome Analysis and Visualisation
-
-### Purpose
-To quantify and visualise crystallisation outcomes across different chemical conditions used during screening experiments.
+### Purpose: To quantify and visualise crystallisation outcomes across different chemical conditions used during screening experiments.
 
 ### Workflow
 - Crystallisation outcomes categorised as:
