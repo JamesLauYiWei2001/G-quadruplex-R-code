@@ -97,10 +97,10 @@ This analysis enables direct comparison of condition efficacy and supports ratio
   - Supporting crystallisation decision-making
   - Reuse or extension in structural or chemical biology projects
 2.This codebase emphasises:
-- Transparency of assumptions
-- Reproducibility
-- Physical interpretability of outputs
-- Clear separation between data processing, modelling, and visualisation
+  - Transparency of assumptions
+  - Reproducibility
+  - Physical interpretability of outputs
+  - Clear separation between data processing, modelling, and visualisation
 3. Code is modular and may be adapted to related nucleic acid systems
 4. Figures generated are formatted for direct inclusion into reports or manuscripts
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
