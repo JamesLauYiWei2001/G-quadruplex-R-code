@@ -38,8 +38,6 @@ This repository includes all analytical workflows used in the project:
   - Equilibrium constant (Keq)
   - Fraction folded at crystallisation-relevant temperatures (e.g. 4 °C, 12 °C)
 
-All thermodynamic parameters are treated as apparent values.
-
 Assumptions documented within the research paper: 
 1.	Structural and folding assumptions: 
   a)	Strictly two-state folding only: The CD signal is a population-weighted average of two states across all structures without any partial folding intermediates, misfolded structures or interconversion of G-quadruplex topologies.  
@@ -51,7 +49,9 @@ Assumptions documented within the research paper:
 
 3.	Experimental validity and interpretation assumptions: 
   a)	The CD signal measured is a population-weighted average of only the folded and unfolded molecules: The CD only measures the fraction of folded or unfolded G-quadruplex structures within the population. Misfolded configurations, if present are assumed to be negligible or spectroscopically indistinguishable from the folded state and are thus not accounted for. 
-  b)	Reversible equilibrium between the folded and unfolded state and the equilibrium constant: At each temperature interval, the G-quadruplexes have been given adequate time to establish its equilibrium state (K(T)) between folded and unfolded state, ensuring that the derived Tm is meaningful. 
+  b)	Reversible equilibrium between the folded and unfolded state and the equilibrium constant: At each temperature interval, the G-quadruplexes have been given adequate time to establish its equilibrium state (K(T)) between folded and unfolded state, ensuring that the derived Tm is meaningful.
+
+As a result, all thermodynamic parameters are treated as apparent values.
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ## 2. Statistical Comparison of Ligand-Induced Stabilisation
