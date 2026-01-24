@@ -102,8 +102,6 @@ This analysis enables direct comparison of condition efficacy and supports ratio
 - Reproducibility
 - Physical interpretability of outputs
 - Clear separation between data processing, modelling, and visualisation
-3. Code is modlar and can be adapted to related nucleic acid systems
+3. Code is modular and may be adapted to related nucleic acid systems
 4. Figures generated are formatted for direct inclusion into reports or manuscripts
-
-
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
