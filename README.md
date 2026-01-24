@@ -5,7 +5,7 @@
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ## Overview
 
-This repository contains the complete R-based analytical codebase developed for an MPharm final-year research project investigating the biophysical stabilisation of G-quadruplex DNA by small-molecule ligands and the resulting crystallisation behaviour.
+This repository contains the complete R-based analytical codebase, investigating the biophysical stabilisation of G-quadruplex DNA by small-molecule ligands and resulting crystallisation outcomes.
 
 This repository includes R code for:
 - Circular Dichroism (CD) thermodynamic analysis
