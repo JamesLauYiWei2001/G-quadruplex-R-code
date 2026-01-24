@@ -18,8 +18,7 @@ This repository includes all analytical workflows used in the project:
 - CD thermal melting and thermodynamic modelling  
 - Statistical comparison of ligand-induced ΔTm values  
 - Crystallisation outcome categorisation and visualisation  
-
-Together, these scripts form the quantitative backbone of the project.
+- Together, these scripts form the quantitative backbone of the project.
 -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ## 1. CD Thermodynamic Analysis
 ### Purpose: To quantify ligand-induced stabilisation of G-quadruplex DNA using CD thermal melting experiments, extracting apparent thermodynamic parameters under two-state folding assumptions.
