@@ -1,0 +1,65 @@
+library(tidyverse)
+
+#set out data frame 
+crystal_results_by_condition <- tibble(
+  Condition_type = c("PEG400", "PEG1000", "(NH4)2SO4", "MPD"), 
+  "Distinct Crystals" = c(1,3,10,4), 
+  "Crystalline Precipitate" = c(13,4,26,0), 
+  "Amorphous Precipitate/Phase Separation" = c(14,19,57,8), 
+  "Clear/No Results" = c(0,2,19,72))
+print(crystal_results_by_condition) #testing
+
+#rearrange to long format for plotting
+condition_long_format <- crystal_results_by_condition %>% 
+                          pivot_longer(
+                            cols = -Condition_type, 
+                            names_to = "Outcome", 
+                            values_to = "Counts") 
+
+print(condition_long_format) #testing
+
+#rearrange/categorise the legend by Distinct crystals -> crystalline precipitate -> amorphous precipitate/phase separation -> Clear/no results
+condition_long_format$Outcome <- factor(condition_long_format$Outcome, levels = c(
+  "Distinct Crystals", 
+  "Crystalline Precipitate", 
+  "Amorphous Precipitate/Phase Separation", 
+  "Clear/No Results")) 
+
+#rearranges/categorises the X-axis by PEG400 -> PEG1000 -> (NH4)2SO4 -> MPD
+condition_long_format$Condition_type <- factor(condition_long_format$Condition_type, levels = c(
+  "PEG400", 
+  "PEG1000", 
+  "(NH4)2SO4", 
+  "MPD"))
+
+#define colour of outcomes in ggplot2
+outcome_columns <- c(
+  "Distinct Crystals" = "#C44E52",
+  "Crystalline Precipitate" = "#4C9F70",
+  "Amorphous Precipitate/Phase Separation" = "#64B5CD",
+  "Clear/No Results" = "#B39DDB")
+
+#plotting out results 
+ggplot(condition_long_format,
+       aes(x = Condition_type, y = Counts, fill = Outcome)) +
+  geom_bar(
+    stat = "identity",
+    position = position_stack(reverse = TRUE),
+    width = 0.75) +
+  scale_fill_manual(values = outcome_columns) +
+  labs(
+    title = "Crystallisation Outcomes by Condition",
+    x = NULL,
+    y = "Number of Wells") +
+  theme_minimal(base_size = 14) +
+  scale_y_continuous(expand = c(0, 0), 
+                     limits = c(0,120), 
+                     breaks = seq(0,120,20)) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(colour = "grey85"),
+    axis.line = element_line(colour = "black"),
+    axis.ticks = element_line(colour = "black"),
+    legend.title = element_blank())
